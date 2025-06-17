@@ -66,7 +66,13 @@ print("Using FTDI device:", device_url)
 # Step 3: Initialize RIS controller
 # ------------------------
 ris_controller = MyRISController(device_url)
-ris_controller.configure("0-10V")
+# Attempt to configure the RIS controller - Exeptions will be caught and sent back to the serial port
+try:
+    ris_controller.configure("0-10V")
+except Exception as e:
+    ser.write(
+        json.dumps({"error": str(e)}).encode("utf-8") + b"\n"
+    )
 
 # ------------------------
 # List available USB serial ports
@@ -90,7 +96,12 @@ try:
             print("Invalid data received. Skipping.")
             continue
 
-        ris_controller.set_pattern(np.array(vector).T)
+        try: 
+            ris_controller.set_pattern(np.array(vector).T)
+        except Exception as e:
+            ser.write(
+                json.dumps({"error": str(e)}).encode("utf-8") + b"\n"
+            )
 
         # Check GPIO input for 3V signal on DAC15
         if lgpio.gpio_read(h, DAC_CHECK_PIN) == 0:
