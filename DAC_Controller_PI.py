@@ -13,20 +13,20 @@ import glob
 subprocess.run(
     ["sudo", "python3", "-c", "from rebind_usb import usb_reset; usb_reset()"]
 )
-#subprocess.run("dmesg | grep ttyUSB", shell=True)
-time.sleep(5)  # Wait for the USB device to reset
+# subprocess.run("dmesg | grep ttyUSB", shell=True)
+# time.sleep(5)  # Wait for the USB device to reset
 
 # ------------------------
 # Check if ttyUSB0 is available
 # ------------------------
 
-for i in range(10):
-    if os.path.exists("/dev/ttyUSB0"):
-        break
-    print("Waiting for /dev/ttyUSB0 to appear...")
-    time.sleep(1)
-else:
-    raise RuntimeError("/dev/ttyUSB0 did not appear after reset")
+# # ------------------------
+# # List available USB serial ports
+# # ------------------------
+# usb_ports = glob.glob("/dev/ttyUSB*")
+# print("Available USB serial ports after reset:", usb_ports)
+#
+# subprocess.run("dmesg | grep ttyUSB", shell=True)
 
 
 def is_zero_vector(vec):
@@ -45,15 +45,51 @@ lgpio.gpio_claim_input(h, DAC_CHECK_PIN)  # Set pin as input
 # ------------------------
 # Step 1: Initialize serial connection with retries
 # ------------------------
+
+
+def get_last_moschip_tty():
+    try:
+        # Run the shell pipeline
+        result = subprocess.run(
+            "dmesg | grep Moschip | grep attached",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        # Split output into lines and get the last non-empty one
+        lines = [line for line in result.stdout.strip().split("\n") if line]
+        if not lines:
+            return None
+
+        last_line = lines[-1]
+        # Extract the last word (device name)
+        last_word = last_line.strip().split()[-1]
+        return f"/dev/{last_word}"
+
+    except Exception as e:
+        print("Error:", e)
+        return None
+
+
+# Attempt to find the Moschip device
+tty_path = get_last_moschip_tty()
+if tty_path:
+    print("Moschip device path:", tty_path)
+else:
+    print("No Moschip device found.")
+
+
 for attempt in range(10):
     try:
-        ser = serial.Serial("/dev/ttyUSB0", 9600)
+        ser = serial.Serial(tty_path, 9600)
         break
     except serial.SerialException:
         print("USB device not found, retrying...")
         time.sleep(2)
 else:
-    raise RuntimeError("Could not open /dev/ttyUSB0 after multiple attempts.")
+    raise RuntimeError("Could not open Moschip device after multiple attempts.")
 
 # ------------------------
 # Step 2: Get FTDI device URL
@@ -65,20 +101,15 @@ print("Using FTDI device:", device_url)
 # ------------------------
 # Step 3: Initialize RIS controller
 # ------------------------
+
+# ris_controller = MyRISController(device_url, unit_cell_num=[9,9],daisy_chain_device_num=1)
 ris_controller = MyRISController(device_url)
 # Attempt to configure the RIS controller - Exeptions will be caught and sent back to the serial port
 try:
     ris_controller.configure("0-10V")
 except Exception as e:
-    ser.write(
-        json.dumps({"error": str(e)}).encode("utf-8") + b"\n"
-    )
+    ser.write(json.dumps({"error": str(e)}).encode("utf-8") + b"\n")
 
-# ------------------------
-# List available USB serial ports
-# ------------------------
-usb_ports = glob.glob("/dev/ttyUSB*")
-print("Available USB serial ports after reset:", usb_ports)
 
 # ------------------------
 # Step 4: Main loop for receiving and processing vectors
@@ -96,12 +127,10 @@ try:
             print("Invalid data received. Skipping.")
             continue
 
-        try: 
+        try:
             ris_controller.set_pattern(np.array(vector).T)
         except Exception as e:
-            ser.write(
-                json.dumps({"error": str(e)}).encode("utf-8") + b"\n"
-            )
+            ser.write(json.dumps({"error": str(e)}).encode("utf-8") + b"\n")
 
         # Check GPIO input for 3V signal on DAC15
         if lgpio.gpio_read(h, DAC_CHECK_PIN) == 0:

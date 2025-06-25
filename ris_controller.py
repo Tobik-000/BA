@@ -26,15 +26,15 @@ class MyRISController:
         self,
         device_url: str | List[str],
         unit_cell_num: int | List[int] = 9,
-        daisy_chain_device_idx: int = 0,
+        daisy_chain_device_num: int = 0,
     ):
         if isinstance(device_url, str):
-            self.dac = [MyDAC81416(device_url, daisy_chain_device_idx)]
+            self.dac = [MyDAC81416(device_url, daisy_chain_device_num)]
         else:
             self.dac = [MyDAC81416(durl) for durl in device_url]
 
         if not isinstance(unit_cell_num, int):
-            if daisy_chain_device_idx > 0 or len(self.dac) == len(unit_cell_num):
+            if daisy_chain_device_num > 0 or len(self.dac) == len(unit_cell_num):
                 noms = np.asarray(unit_cell_num)
                 if all(1 <= noms) and all(noms <= 16):
                     self._unit_cell_num = noms
@@ -48,7 +48,7 @@ class MyRISController:
             if isinstance(device_url, str) or (
                 isinstance(device_url, List) and len(device_url) == 1
             ):
-                if daisy_chain_device_idx == 0:
+                if daisy_chain_device_num == 0:
                     if 1 <= unit_cell_num <= 16:
                         self._unit_cell_num = unit_cell_num
                     else:
@@ -57,7 +57,7 @@ class MyRISController:
                         )
                 else:
                     if isinstance(unit_cell_num, List) and len(unit_cell_num) == (
-                        daisy_chain_device_idx + 1
+                        daisy_chain_device_num + 1
                     ):
                         noms = np.asarray(unit_cell_num)
                         if all(1 <= noms) and all(noms <= 16):
@@ -68,11 +68,11 @@ class MyRISController:
                             )
                     else:
                         raise ValueError(
-                            f"unit_cell_num must have the length {daisy_chain_device_idx + 1}"
+                            f"unit_cell_num must have the length {daisy_chain_device_num + 1}"
                         )
-            elif daisy_chain_device_idx > 0:
+            elif daisy_chain_device_num > 0:
                 if isinstance(unit_cell_num, List) and len(unit_cell_num) == (
-                    daisy_chain_device_idx + 1
+                    daisy_chain_device_num + 1
                 ):
                     noms = np.asarray(unit_cell_num)
                     if all(1 <= noms) and all(noms <= 16):
@@ -83,13 +83,13 @@ class MyRISController:
                         )
                 else:
                     raise ValueError(
-                        f"unit_cell_num must have the length {daisy_chain_device_idx + 1}"
+                        f"unit_cell_num must have the length {daisy_chain_device_num + 1}"
                     )
             else:
                 raise ValueError(
                     "unit_cell_num and device_url must have the same length if not daisychained"
                 )
-        self.daisy_chain_device_num = daisy_chain_device_idx
+        self.daisy_chain_device_num = daisy_chain_device_num
 
     def configure(
         self,
@@ -97,6 +97,7 @@ class MyRISController:
         dac_idx: int = 0,
         daisy_chain_safty_device: int = 0,
     ):
+        
         self.daisy_chain_safety_device = daisy_chain_safty_device
 
         # print("Power-on Device")
@@ -107,7 +108,7 @@ class MyRISController:
         # print("Enabling DAC Channels")
         self.enable_dac_channels(dac_idx=dac_idx)
 
-        self.set_safty_voltage(
+        self._set_safty_voltage(
             voltage_range_identifier, safty_dac_idx=daisy_chain_safty_device
         )
 
@@ -229,19 +230,15 @@ class MyRISController:
         else:
             mdac = self.dac[0]
             data = mdac.get_dacpwdwn_mask()
-            configs = []
-            for i in range(self.daisy_chain_device_num + 1):
-                # Enable OUT15 only on the safety device
-                mask = (1 << self._unit_cell_num) - 1
-                if i == self.daisy_chain_safety_device:
-                    mask |= 1 << 15
-                config = 0xFFFF ^ mask
-                configs.append(config)
+            mask = ((1 << self._unit_cell_num) - 1)
+            mask[self.daisy_chain_safety_device] |= (1 << 15)
+            config = 0xFFFF ^ mask
+            
             mdac.set_register(
                 np.repeat(
                     mdac.REGISTER_MAP["DACPWDWN"], self.daisy_chain_device_num + 1
                 ),
-                np.array(configs),
+                config,
                 np.repeat(data[0], self.daisy_chain_device_num + 1),
                 np.repeat(data[1], self.daisy_chain_device_num + 1),
             )
@@ -352,7 +349,7 @@ class MyRISController:
         )
         return voltages
 
-    def set_safty_voltage(
+    def _set_safty_voltage(
         self,
         voltage_range_identifier: str,
         safety_voltage: float = 3.0,
