@@ -72,6 +72,8 @@ def DAC_Config(device_url, daisy_chain_device_num=0, voltage_range="0-10V"):
                 daisy_chain_device_num=daisy_chain_device_num,
             )
             ris_controller.configure(voltage_range)
+
+        return ris_controller
     except Exception as e:
         send_message(ser, f"DAC configuration failed: {e}", is_error=True)
 
@@ -115,9 +117,7 @@ print("Using FTDI device:", device_url)
 # Step 3: Initialize RIS controller
 # ------------------------
 
-ris_controller = MyRISController(
-    device_url, unit_cell_num=[9, 9], daisy_chain_device_num=1
-)
+#ris_controller = MyRISController(device_url, unit_cell_num=[9, 9], daisy_chain_device_num=1)
 ris_controller = MyRISController(device_url)
 # Attempt to configure the RIS controller - Exceptions will be caught and sent back to the serial port
 try:
@@ -137,7 +137,12 @@ try:
 
         if "Config" in line:
             config_params = json.loads(line)
-            DAC_Config(device_url, config_params.get("daisy_chain_device_num"), config_params.get("voltage_range"))
+            ris_controller = DAC_Config(
+                device_url,
+                config_params.get("daisy_chain_device_num"),
+                config_params.get("voltage_range"),
+            )
+            continue
 
         try:
             vector = json.loads(line)
