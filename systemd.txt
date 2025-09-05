@@ -1,0 +1,19 @@
+[Unit]
+Description=DAC Controller on Raspberry Pi
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/RIS
+ExecStart=/home/admin/RIS/myenv/bin/python /home/admin/RIS/
+DAC_Controller_PI.py
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+KillMode=process
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=multi-user.target
