@@ -1,0 +1,48 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editors/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies & env
+node_modules/
+myenv/
+.env
+.env.*            # e.g., .env.local
+*.pyc
+__pycache__/
+
+# Builds & outputs
+dist/
+build/
+out/
+coverage/
+*.log
+
+# Misc
+*.tmp
+*.bak
+
+# Ignore actual virtual environment folder
+myenv/
+
+# Jupyter notebook checkpoints
+*.ipynb_checkpoints/
+
+# Windows binaries
+*.exe
+*.dll
+*.bat
+*.cmd
+
+# macOS system files
+.AppleDouble
+.LSOverride
+
+# Coverage reports
+.coverage
+htmlcov/
