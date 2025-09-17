@@ -1,5 +1,0 @@
-numpy
-pyserial
-pyusb
-pyftdi
-lgpio
