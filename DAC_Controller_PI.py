@@ -1,17 +1,15 @@
 from pyftdi.ftdi import Ftdi
 import numpy as np
-from ris_controller import MyRISController
+from Utilities.ris_controller import MyRISController
 import serial
 import json
 import time
 import subprocess
 import lgpio
-import os
-import glob
 
 # Rebind USB device if needed using a subprocess call for sudo permissions
 subprocess.run(
-    ["sudo", "python3", "-c", "from rebind_usb import usb_reset; usb_reset()"]
+    ["sudo", "python3", "-c", "from Utilities.rebind_usb import usb_reset; usb_reset()"]
 )
 
 
@@ -92,7 +90,7 @@ def DAC_Config(device_url, daisy_chain_device_num=0, voltage_range="0-10V"):
 # Configure GPIO for checking DAC15 output
 DAC_CHECK_PIN = 4  # GPIO 4 (Physical pin 7)
 chip = lgpio.gpiochip_open(0)
-lgpio.gpio_claim_input(chip, DAC_CHECK_PIN, 1)
+lgpio.gpio_claim_input(chip, DAC_CHECK_PIN, lgpio.SET_PULL_DOWN)
 
 
 # Attempt to find the Moschip device
@@ -116,18 +114,15 @@ else:
 send_message(ser, "USB device opened successfully", is_error=False)
 
 
-# ------------------------
-# Step 2: Get FTDI device URL
-# ------------------------
+# Get FTDI device URL
 device_url = f"ftdi:///1"
 print("Using FTDI device:", device_url)
 
-# ------------------------
-# Step 3: Initialize RIS controller
-# ------------------------
 
-# ris_controller = MyRISController(device_url, unit_cell_num=[9, 9], daisy_chain_device_num=1)
+# Configure the RIS controller before entering the main loop
 ris_controller = MyRISController(device_url)
+# ris_controller = MyRISController(device_url, unit_cell_num=[9, 9], daisy_chain_device_num=1) # Example for 2 devices
+
 # Attempt to configure the RIS controller - Exceptions will be caught and sent back to the serial port
 try:
     ris_controller.configure("0-10V")
@@ -135,15 +130,15 @@ except Exception as e:
     send_message(ser, e)
 
 
-# ------------------------
-# Step 4: Main loop for receiving and processing vectors
-# ------------------------
+# Main loop to read from serial and control the DAC
 try:
     while True:
+        # Read a line from the serial interface
         line = ser.readline().decode("utf-8").strip()
         if not line:
             continue
 
+        # Check if the line contains configuration parameters
         if "Config" in line:
             config_params = json.loads(line)
             ris_controller = DAC_Config(
@@ -154,6 +149,7 @@ try:
             send_message(ser, "Config received", is_error=False)
             continue
 
+        # Parse the received line as a JSON array
         try:
             vector = json.loads(line)
             print("Received vector:", vector)
@@ -162,6 +158,7 @@ try:
             send_message(ser, "Invalid data received. Skipping", is_error=True)
             continue
 
+        # Set the pattern on the RIS controller (DAC)
         try:
             ris_controller.set_pattern(np.array(vector).T)
             send_message(ser, "Pattern received", is_error=False)
@@ -169,15 +166,17 @@ try:
             send_message(ser, e)
 
         # Check GPIO input for 3V signal on DAC15
-        value = lgpio.gpio_read(h, DAC_CHECK_PIN)
-        if lgpio.gpio_read(h, DAC_CHECK_PIN) == 0:
+        value = lgpio.gpio_read(chip, DAC_CHECK_PIN)
+        if value == 0:
             send_message(ser, "DAC15 output missing or low", is_error=True)
             print("Warning: DAC15 output check failed. Message sent.")
+        # If output is good and vector was set, send success message
         else:
             send_message(ser, "Pattern set successfully", is_error=False)
             print("Pattern set successfully.")
 
 
+# Final cleanup
 finally:
     send_message(ser, "Powering down", is_error=False)
     lgpio.gpiochip_close(chip)
