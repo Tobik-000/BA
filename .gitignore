@@ -1,0 +1,10 @@
+__pycache__/
+
+myenv/
+
+DAC_Test.py
+README.md
+serial_connection_from_pc.py
+serial_connection_from_raspi.py
+README.txt
+systemd.txt
