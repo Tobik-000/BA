@@ -13,11 +13,6 @@ import glob
 subprocess.run(
     ["sudo", "python3", "-c", "from rebind_usb import usb_reset; usb_reset()"]
 )
-# subprocess.run("dmesg | grep ttyUSB", shell=True)
-
-
-def is_zero_vector(vec):
-    return all(v == 0 for v in vec)
 
 
 def send_message(ser, msg, is_error=True):
@@ -34,6 +29,12 @@ def send_message(ser, msg, is_error=True):
 
 
 def get_serial_converter_address():
+    """
+    Get the serial to USB converter address from dmesg logs.
+
+    Returns:
+        str: The device path of the serial converter or None if not found.
+    """
     try:
         # search for the Serial to USB converter in dmesg logs (Moschip is the Manufacturer)
         result = subprocess.run(
@@ -60,6 +61,16 @@ def get_serial_converter_address():
 
 
 def DAC_Config(device_url, daisy_chain_device_num=0, voltage_range="0-10V"):
+    """Configure the DAC device.
+
+    Args:
+        device_url (str): The device URL.
+        daisy_chain_device_num (int, optional): The daisy chain device number. Defaults to 0.
+        voltage_range (str, optional): The voltage range. Defaults to "0-10V".
+
+    Returns:
+        MyRISController: The configured RIS controller.
+    """
     try:
         if daisy_chain_device_num == 0:
             ris_controller = MyRISController(device_url)
@@ -78,12 +89,10 @@ def DAC_Config(device_url, daisy_chain_device_num=0, voltage_range="0-10V"):
         send_message(ser, f"DAC configuration failed: {e}", is_error=True)
 
 
-# ------------------------
-# GPIO setup for checking DAC15 output
-# ------------------------
-DAC_CHECK_PIN = 17  # GPIO pin number for checking DAC15 output
-h = lgpio.gpiochip_open(0)  # Open GPIO chip
-lgpio.gpio_claim_input(h, DAC_CHECK_PIN)  # Set pin as input
+# Configure GPIO for checking DAC15 output
+DAC_CHECK_PIN = 4  # GPIO 4 (Physical pin 7)
+chip = lgpio.gpiochip_open(0)
+lgpio.gpio_claim_input(chip, DAC_CHECK_PIN, 1)
 
 
 # Attempt to find the Moschip device
@@ -117,7 +126,7 @@ print("Using FTDI device:", device_url)
 # Step 3: Initialize RIS controller
 # ------------------------
 
-#ris_controller = MyRISController(device_url, unit_cell_num=[9, 9], daisy_chain_device_num=1)
+# ris_controller = MyRISController(device_url, unit_cell_num=[9, 9], daisy_chain_device_num=1)
 ris_controller = MyRISController(device_url)
 # Attempt to configure the RIS controller - Exceptions will be caught and sent back to the serial port
 try:
@@ -142,6 +151,7 @@ try:
                 config_params.get("daisy_chain_device_num"),
                 config_params.get("voltage_range"),
             )
+            send_message(ser, "Config received", is_error=False)
             continue
 
         try:
@@ -149,26 +159,26 @@ try:
             print("Received vector:", vector)
         except json.JSONDecodeError:
             print("Invalid data received. Skipping.")
+            send_message(ser, "Invalid data received. Skipping", is_error=True)
             continue
 
         try:
             ris_controller.set_pattern(np.array(vector).T)
-            send_message(ser, "Pattern set successfully", is_error=False)
+            send_message(ser, "Pattern received", is_error=False)
         except Exception as e:
             send_message(ser, e)
 
         # Check GPIO input for 3V signal on DAC15
+        value = lgpio.gpio_read(h, DAC_CHECK_PIN)
         if lgpio.gpio_read(h, DAC_CHECK_PIN) == 0:
-            send_message(ser, "DAC15 output missing or low", is_error=False)
+            send_message(ser, "DAC15 output missing or low", is_error=True)
             print("Warning: DAC15 output check failed. Message sent.")
-
-        if is_zero_vector(vector):
-            print("Zero vector received. Terminating program.")
-            break
+        else:
+            send_message(ser, "Pattern set successfully", is_error=False)
+            print("Pattern set successfully.")
 
 
 finally:
-    # lgpio.gpio_free(h)
-    lgpio.gpiochip_close(h)
+    send_message(ser, "Powering down", is_error=False)
+    lgpio.gpiochip_close(chip)
     ser.close()
-    print("Serial and GPIO connection closed.")
